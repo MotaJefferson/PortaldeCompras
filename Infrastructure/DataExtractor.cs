@@ -10,32 +10,30 @@ namespace PortaldeCompras.Infrastructure
     public class DataExtractor : IDataExtractor<DataTable>
     {
         private readonly IElementMap _elementMap;
-        private readonly DataTable _licitacoes;
 
-        public DataExtractor (IElementMap elementMap)
+        public DataExtractor(IElementMap elementMap)
         {
             _elementMap = elementMap;
         }
 
-        public DataTable CreateTable(List<Licitacao> licitacoes)
+        public DataTable GetData(IWebDriver driver)
+        {
+            return CreateTable(GetLicitacoes(driver));
+        }
+
+        private DataTable CreateTable(List<Licitacao> licitacoes)
         {
             var table = new DataTable();
             table.Columns.Add("Modalidade", typeof(string));
             table.Columns.Add("Numero", typeof(int));
             table.Columns.Add("Ano", typeof(int));
 
-            foreach(var l in licitacoes)
+            foreach (var l in licitacoes)
             {
-                table.Rows.Add(l.TipoLicitacao, Convert.ToInt32(l.NumLicitacao), Convert.ToInt32(l.AnoLicitacao));
+                table.Rows.Add(l.TipoLicitacao, l.NumLicitacao, l.AnoLicitacao);
             }
 
             return table;
-        }
-
-        public DataTable GetData(IWebDriver driver)
-        {
-            //PENSAR NO QUE FAZER, ALTERAR PAGINA, PEGAR POR SITUAÇÃO, DEFINIR INTERFACE
-            return CreateTable(GetLicitacoes(driver));
         }
 
         public List<Licitacao> GetLicitacoes(IWebDriver driver)

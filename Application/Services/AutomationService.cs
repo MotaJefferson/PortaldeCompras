@@ -16,14 +16,15 @@ namespace PortaldeCompras.Application.Services
             _dataSaver = dataSaver;
         }
 
-        public void Run(string url, string path)
+        public int Run(string url, string path)
         {
             var driver = _browser.Start();
             _browser.NavigateTo(url);
 
             var data = _dataExtractor.GetData(driver);
-            _dataSaver.Save(data, path);
+            var savedCount = _dataSaver.Save(data, path);
             driver.Quit();
+            return savedCount;
         }
     }
 }

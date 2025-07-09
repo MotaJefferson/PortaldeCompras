@@ -14,7 +14,7 @@ namespace PortaldeCompras.Domain.Models
 
         public override string ToString()
         {
-            return $"{TipoLicitacao} nº {NumLicitacao}/{AnoLicitacao}";
+            return $"{TipoLicitacao} nº {NumLicitacao:D4}/{AnoLicitacao}";
         }
     }
 }

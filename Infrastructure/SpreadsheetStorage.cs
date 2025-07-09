@@ -1,133 +1,89 @@
-﻿using PortaldeCompras.Domain.Interfaces;
-using System.Data;
 using ClosedXML.Excel;
+using PortaldeCompras.Domain.Interfaces;
+using System.Data;
 
 namespace PortaldeCompras.Infrastructure
 {
     public class SpreadsheetStorage : IDataSaver
     {
-        public void Save(DataTable data, string path)
+        public int Save(DataTable newData, string path)
         {
             path = path.EndsWith(".xlsx", StringComparison.OrdinalIgnoreCase) ? path : $"{path}.xlsx";
 
-            DataTable DataExists = new DataTable();
-
-            if (File.Exists(path))
-            {
-                using var workbook = new XLWorkbook(path);
-                var worksheet = workbook.Worksheet("Licitacoes");
-                
-                if (worksheet != null)
-                {
-                    bool firstRow = true;
-                    foreach(var row in worksheet.RowsUsed())
-                    {
-                        if (firstRow)
-                        {
-                            foreach (var cell in row.Cells())
-                                DataExists.Columns.Add(cell.GetString());
-                            firstRow = false;
-                        }
-                        else
-                        {
-                            var dataRow = DataExists.NewRow();
-                            for (int i = 0; i < DataExists.Columns.Count; i++)
-                            {
-                                var cell = row.Cell(i + 1);
-                                dataRow[i] = cell.Value.Type == XLDataType.Blank
-                                    ? DBNull.Value
-                                    : cell.Value;
-
-                                //dataRow[i] = row.Cell(i + 1).Value;
-                            }                                
-                                
-                            DataExists.Rows.Add(dataRow);
-                        }
-                    }
-                }
-            }
-            else
-            {
-                foreach(DataColumn col in data.Columns)
-                    DataExists.Columns.Add(col.ColumnName);
-            }
-
-            Func<DataRow, string> GenerateKey = r => string.Join("|", r.ItemArray.Select(v => v?.ToString()?.Trim()));
-
-            var ExistingKeys = DataExists.AsEnumerable()
-                                         .Select(GenerateKey)
-                                         .ToHashSet();
-
-            var NewRowsToInsert = data.AsEnumerable()
-                                      .Where(r => !ExistingKeys.Contains(GenerateKey(r)))
-                                      .ToList();
-
-            if(NewRowsToInsert.Count == 0)
-            {
-                Console.WriteLine("Nenhuma nova linha para inserir");
-            }
-
             XLWorkbook wb;
             IXLWorksheet ws;
+            var existingKeys = new HashSet<string>();
 
             if (File.Exists(path))
             {
                 wb = new XLWorkbook(path);
-                ws = wb.Worksheet("Licitacoes") ?? wb.AddWorksheet("Licitacoes");
+                if (wb.Worksheets.TryGetWorksheet("Licitacoes", out ws))
+                {
+                    if (ws.LastRowUsed() != null && ws.LastRowUsed().RowNumber() > 1)
+                    {
+                        var header = ws.FirstRowUsed();
+                        var tempTable = new DataTable();
+                        foreach(var cell in header.CellsUsed())
+                        {
+                            tempTable.Columns.Add(cell.Value.ToString());
+                        }
+
+                        foreach(var dataRow in ws.RowsUsed().Skip(1))
+                        {
+                            var newRow = tempTable.NewRow();
+                            for(int i = 0; i < tempTable.Columns.Count; i++)
+                            {
+                                newRow[i] = dataRow.Cell(i + 1).Value;
+                            }
+                            tempTable.Rows.Add(newRow);
+                        }
+                        existingKeys = new HashSet<string>(tempTable.AsEnumerable().Select(GenerateKey));
+                    }
+                }
+                else
+                {
+                    ws = wb.AddWorksheet("Licitacoes");
+                }
             }
             else
             {
                 wb = new XLWorkbook();
                 ws = wb.AddWorksheet("Licitacoes");
-
-                for(int i = 0; i < data.Columns.Count; i++)
-                    ws.Cell(1, i + 1).Value = data.Columns[i].ColumnName;
             }
 
-            int lastRow = ws.LastRowUsed()?.RowNumber() ?? 1;
+            var newRowsToInsert = newData.AsEnumerable()
+                .Where(row => !existingKeys.Contains(GenerateKey(row)))
+                .ToList();
 
-            if(lastRow == 1 && ws.Cell(1, 1).IsEmpty())
+            if (!newRowsToInsert.Any())
             {
-                for (int i = 0; i < data.Columns.Count; i++)
-                    ws.Cell(1, i + 1).Value = data.Columns[i].ColumnName;
-                lastRow = 1;
+                wb.Dispose();
+                return 0; 
             }
 
-            int currentRow = lastRow + 1;
-
-            foreach(var row in NewRowsToInsert)
+            if (ws.LastRowUsed() == null)
             {
-                for(int col = 0; col < data.Columns.Count; col++)
+                for (int i = 0; i < newData.Columns.Count; i++)
                 {
-                    var value = row[col];
-
-                    //ws.Cell(currentRow, col + 1).Value = value != null ? value.ToString() : "";
-
-                    if (Convert.IsDBNull(value))
-                    {
-                        ws.Cell(currentRow, col + 1).Value = "";
-                    }
-                    else if (value is int || value is double || value is decimal || value is float)
-                    {
-                        ws.Cell(currentRow, col + 1).Value = Convert.ToDouble(value);
-                    }
-                    else if (value is DateTime)
-                    {
-                        ws.Cell(currentRow, col + 1).Value = (DateTime)value;
-                    }
-                    else
-                    {
-                        ws.Cell(currentRow, col + 1).Value = value.ToString();
-                    }
-
+                    ws.Cell(1, i + 1).Value = newData.Columns[i].ColumnName;
                 }
-                currentRow++;
+            }
+
+            if (newRowsToInsert.Any())
+            {
+                ws.Cell(ws.LastRowUsed().RowNumber() + 1, 1).InsertData(newRowsToInsert);
             }
 
             ws.Columns().AdjustToContents();
             wb.SaveAs(path);
+            wb.Dispose();
 
-            Console.WriteLine($"{NewRowsToInsert.Count} novas linhas foram inseridas na planilha");
+            return newRowsToInsert.Count;
+        }
+
+        private string GenerateKey(DataRow row)
+        {
+            return string.Join("|", row.ItemArray.Select(v => v?.ToString()?.Trim()));
         }
     }
 }
